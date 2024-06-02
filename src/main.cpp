@@ -18,24 +18,27 @@ bool i2CAddrTest(uint8_t addr);
 
 // Program controls / limits
 #define MEASURMENT_INTERVAL 1000
-#define VREF 4.1          // set by LM4040 chip
-#define MAX_TEMP 160      // temperature shutoff threshold
+#define VREF 4.1            // set by LM4040 chip
+#define MAX_TEMP 160        // temperature shutoff threshold
+#define TIMER_DURATION_MINUTES .5 // specify duration in minutes
 
-#define ONE_WIRE_BUS 5    // Temperature data wire is connected to the Arduino digital pin 5
+#define ONE_WIRE_BUS 5      // Temperature data wire is connected to the Arduino digital pin 5
 
 // Variables
-int PWM_out_pin_1 = 3;    // assign D3 pin for PWM out signal; 490 Hz
-int PWM_out_pin_2 = 9;    // assign D4 pin for PWM out signal; 490 Hz
+int PWM_out_pin_1 = 3;      // assign D3 pin for PWM out signal; 490 Hz
+int PWM_out_pin_2 = 9;      // assign D4 pin for PWM out signal; 490 Hz
 int vgg_adc_1, vgg_adc_2;
 float vgg_1, vgg_2;
 byte pwm_out_level_1, pwm_out_level_2;
 float temp_1;
 String status = "NORMAL";
 
+unsigned long startMillis;  // Store the start time
+bool timerActive = false;   // To track if the timer has started
 
-int intDimmerLevel_1, intDimmerLevel_2;   // levels of dimmers #1 & #2
-String previousLine1 = "";                // LCD Previous line #1
-String previousLine2 = "";                // LCD Previous Line #2
+int intDimmerLevel_1 = 0, intDimmerLevel_2 = 0;   // levels of dimmers #1 & #2
+String previousLine1 = "";                        // LCD Previous line #1
+String previousLine2 = "";                        // LCD Previous Line #2
 
 // Initialize the LCD with the numbers of the interface pins
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -45,6 +48,9 @@ OneWire oneWire(ONE_WIRE_BUS);
 
 // Pass our oneWire reference to Dallas Temperature sensor 
 DallasTemperature sensors(&oneWire);
+
+// Convert TIMER_DURATION from minutes to milliseconds
+unsigned long TIMER_DURATION = TIMER_DURATION_MINUTES * 60UL * 1000UL;
 
 // Function to pad strings to a fixed length
 String padString(String str, int length) {
@@ -58,8 +64,6 @@ String padString(String str, int length) {
 int dimmerToPWM(float vDimmer, int &intDimmerLevel) {
   // Dimmer output goes through 1/3 voltage divider, so output is 0 - 10 VDC ÷ 3
   // Dimmer voltages based on experimental measurement of dimmer output
-  // Serial.print("vDimmer: ");
-  // Serial.println(vDimmer);
   if (vDimmer > 3.25) {        // 100% heat - 7 LEDs lit
     intDimmerLevel = 7;
     return 255;
@@ -134,6 +138,19 @@ unsigned long previousMillis = 0;  // Will store last time LCD was updated
 void loop() {
   unsigned long currentMillis = millis();   // Time tracking
 
+  // Start the timer if it hasn't been started yet
+  if (!timerActive) {
+    startMillis = currentMillis;
+    timerActive = true;
+  }
+
+  // Check if the timer duration has been exceeded
+  if (timerActive && (currentMillis - startMillis >= TIMER_DURATION)) {
+    digitalWrite(HEATER_MASTER, LOW);  // Turn off the master relay
+    Serial.println("Timer duration exceeded! Heaters turned off.");
+    status = "TIMER";
+  }
+
   // Measurement clock
   if (currentMillis - previousMillis >= MEASURMENT_INTERVAL) {
     previousMillis = currentMillis;  // Save the last time you updated the display
@@ -150,6 +167,12 @@ void loop() {
     pwm_out_level_1 = dimmerToPWM(vgg_1, intDimmerLevel_1);
     pwm_out_level_2 = dimmerToPWM(vgg_2, intDimmerLevel_2);
 
+    // Reset status to NORMAL if any dimmer is turned off and back on
+    if ((intDimmerLevel_1 == 0 || intDimmerLevel_2 == 0) && status != "TIMER") {
+      status = "NORMAL";
+      startMillis = currentMillis; // Restart the timer
+    }
+
     // Write to PWM pins
     analogWrite(PWM_out_pin_1, pwm_out_level_1);  // Signal to control Heater #1 (gate of MOSFET #1)
     analogWrite(PWM_out_pin_2, pwm_out_level_2);  // Signal to control Heater #2 (gate of MOSFET #2)
@@ -160,7 +183,6 @@ void loop() {
     temp_1 = sensors.getTempFByIndex(0);
 
     // Check if the temperature exceeds the maximum limit
-    temp_1= 100.0;
     if (temp_1 > MAX_TEMP) {
       digitalWrite(HEATER_MASTER, LOW);  // Turn off the master relay
       Serial.println("Temperature exceeded maximum limit! Heaters turned off.");
@@ -171,26 +193,28 @@ void loop() {
     int pwm_percent_1 = round(pwm_out_level_1 * 100.0 / 255);
     int pwm_percent_2 = round(pwm_out_level_2 * 100.0 / 255);
 
-    // Build strings for each line with padding
+    // LCD line 1 formatting
     char line1[17], line2[17];
-    if (status=="NORMAL"){
+    if (status == "NORMAL" || status == "TIMER") {
       if (intDimmerLevel_1 == 0 && intDimmerLevel_2 == 0) {
-        sprintf(line1, "2:OFF    1:OFF");
-      } 
-      else if (intDimmerLevel_1 == 0) {
+        sprintf(line1, "2:OFF    1:OFF  ");
+      } else if (intDimmerLevel_1 == 0) {
         sprintf(line1, "2:%1d/%-3d  1:OFF   ", intDimmerLevel_2, pwm_percent_2);
-      } 
-      else if (intDimmerLevel_2 == 0) {
+      } else if (intDimmerLevel_2 == 0) {
         sprintf(line1, "2:OFF    1:%1d/%-3d", intDimmerLevel_1, pwm_percent_1);
-      } 
-      else {
+      } else {
         sprintf(line1, "2:%1d/%-3d  1:%1d/%-3d", intDimmerLevel_2, pwm_percent_2, intDimmerLevel_1, pwm_percent_1);
       }
+    } else {
+      sprintf(line1, "2:OFF    1:OFF");
     }
-    else{
-      sprintf(line1, "2:OFF      1:OFF");
-    }   
-    sprintf(line2, "Temp:%-3.0d  %s", (int) temp_1, status.c_str());
+
+    // LCD line two formatting
+    if (temp_1 < -99) {
+      sprintf(line2, "Temp:n/a  %s", status.c_str());
+    } else {
+      sprintf(line2, "Temp:%-3.0d %s", (int) temp_1, status.c_str());
+    }
 
     // Update the LCD only if the lines have changed
     if (String(line1) != previousLine1) {
