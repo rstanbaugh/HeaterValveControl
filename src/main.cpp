@@ -7,6 +7,9 @@
 // Function definitions
 bool i2CAddrTest(uint8_t addr);
 
+// set to 1 while debugging
+#define DEBUG 0
+
 // Pin Assignments
 #define VGG_1 A0            // measuring Vgg from dimmer 1
 #define VGG_2 A2            // measuring Vgg from dimmer 2
@@ -17,10 +20,12 @@ bool i2CAddrTest(uint8_t addr);
 // SCL (Serial Clock) pin is A5
 
 // Program controls / limits
-#define MEASURMENT_INTERVAL 1000
-#define VREF 4.1            // set by LM4040 chip
-#define MAX_TEMP 160        // temperature shutoff threshold
-#define TIMER_DURATION_MINUTES .5 // specify duration in minutes
+#define MEASURMENT_INTERVAL 1000    // minimum interval for updating the dispaly
+#define VREF 4.1                    // set by LM4040 chip
+#define MAX_TEMP 140                // temperature shutoff threshold
+
+#define HEATER_TIMEOUT_ON 1         // turns heater timeout loop on / off
+#define TIMER_DURATION_MINUTES 240  // specify duration in minutes
 
 #define ONE_WIRE_BUS 5      // Temperature data wire is connected to the Arduino digital pin 5
 
@@ -99,10 +104,12 @@ int dimmerToPWM(float vDimmer, int &intDimmerLevel) {
 }
 
 void setup() {
-  // Serial setup
-  Serial.begin(9600);
-  while (!Serial);  // Wait for Serial monitor to open
-  Serial.println("Serial 9600 baud running...");
+  #if DEBUG
+    // Serial setup
+    Serial.begin(9600);
+    while (!Serial);  // Wait for Serial monitor to open
+    Serial.println("Serial 9600 baud running...");
+  #endif
 
   Wire.begin();
 
@@ -145,13 +152,15 @@ void loop() {
   }
 
   // Check if the timer duration has been exceeded
-  if (timerActive && (currentMillis - startMillis >= TIMER_DURATION)) {
-    digitalWrite(HEATER_MASTER, LOW);  // Turn off the master relay
-    Serial.println("Timer duration exceeded! Heaters turned off.");
-    status = "TIMER";
-  }
+  #if HEATER_TIMEOUT_ON
+    if (timerActive && (currentMillis - startMillis >= TIMER_DURATION)) {
+      digitalWrite(HEATER_MASTER, LOW);  // Turn off the master relay
+      Serial.println("Timer duration exceeded! Heaters turned off.");
+      status = "TIMER";
+    }
+  #endif
 
-  // Measurement clock
+  // display update clock
   if (currentMillis - previousMillis >= MEASURMENT_INTERVAL) {
     previousMillis = currentMillis;  // Save the last time you updated the display
 
@@ -229,14 +238,16 @@ void loop() {
     }
 
     // Repeat the LCD prints to the Serial port
-    Serial.print("Vgg 1: ");
-    Serial.print(vgg_1, 1);
-    Serial.println(" V, ");
-    Serial.print("Temp: ");
-    Serial.print(temp_1, 1);
-    Serial.println(" F");
-    Serial.print("PWM: ");
-    Serial.println(pwm_out_level_1);
+    #if DEBUG
+      Serial.print("Vgg 1: ");
+      Serial.print(vgg_1, 1);
+      Serial.println(" V, ");
+      Serial.print("Temp: ");
+      Serial.print(temp_1, 1);
+      Serial.println(" F");
+      Serial.print("PWM: ");
+      Serial.println(pwm_out_level_1);
+    #endif
   }
 }
 
