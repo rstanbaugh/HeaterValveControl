@@ -3,3 +3,57 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# PlatformIO specific files
+/.pioenvs/
+/.piolibdeps/
+/.vscode/
+
+# Python Byte-compiled files
+__pycache__/
+*.pyc
+
+# Project build files
+/.build/
+
+# PlatformIO project-specific files
+*.ini
+
+# PlatformIO Unit Test
+/test_output/
+
+# Ignore VSCode specific files
+.vscode/
+
+# Ignore MacOS specific files
+.DS_Store
+
+# Ignore Windows specific files
+Thumbs.db
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore logs
+*.log
+
+# Ignore compiled binary files
+*.elf
+*.bin
+*.hex
+
+# Ignore backup files
+*.bak
+*.old
+*.orig
+*.swp
+
+# Node.js specific files
+node_modules/
+
+# Python virtual environment
+.venv/
+
+# Environment variables
+.env
